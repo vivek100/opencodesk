@@ -31,3 +31,6 @@ next-env.d.ts
 # editor / local
 .cursor/
 .agent-tools/
+
+# internal design docs (not published)
+/docs/

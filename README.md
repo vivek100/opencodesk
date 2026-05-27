@@ -107,8 +107,6 @@ src/
 └── runtime/          # cowork-provider (threads + chat runtime)
 ```
 
-Design notes: see [docs/06-next-ux-and-workspace-plan.md](docs/06-next-ux-and-workspace-plan.md).
-
 ## Environment variables
 
 | Variable | Required | Description |

@@ -31,4 +31,4 @@ Out of scope (unless discussed first):
 
 ## Design reference
 
-See `docs/06-next-ux-and-workspace-plan.md` for the workspace contract and UX direction.
+See the root README for the workspace contract (`/workspace/sessions/...`, `/workspace/memory/`) and display tools (`showFile`, `showBrowser`).
