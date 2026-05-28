@@ -1,19 +1,61 @@
 # OpenCoDesk
 
-A **starter template** for building file-centric AI cowork apps: shared cloud drive, session-scoped folders, rich file preview, live browser preview, and durable markdown memory — powered by [Blaxel](https://blaxel.ai) sandboxes, [assistant-ui](https://www.assistant-ui.com/), and Next.js.
+A **starter template** for building file-centric AI cowork apps on **[Blaxel](https://blaxel.ai)** — persistent drive, resumable sandboxes, live preview URLs, and a canvas UI — wired up with [assistant-ui](https://www.assistant-ui.com/) and Next.js.
 
 Use it as a working app or fork it to build your own agent workspace product.
+
+## Key Features in the app?
+
+Most AI coding demos stop at chat. OpenCoDesk shows what becomes possible when you combine Blaxel's compute and storage primitives:
+
+| Primitive | What it unlocks | Where OpenCoDesk uses it |
+|-----------|-----------------|--------------------------|
+| **[@blaxel/core SDK](https://blaxel.ai)** | One SDK for drives, sandboxes, exec, filesystem, and previews — no custom infra glue | `scripts/setup.ts`, `src/lib/sandbox.ts`, file/upload APIs |
+| **Persistent Drive** | Durable shared filesystem across chats — not ephemeral container disk | One drive mounted at `/workspace`; agent writes and UI reads the same files |
+| **Sandboxes** | Isolated microVM per thread for shell work, installs, and servers | `provisionSandbox` → `SandboxInstance.createIfNotExists` per chat |
+| **Fast resume / standby** | Sandboxes resume instead of cold-starting every message | `createIfNotExists` + `SandboxInstance.get`; idle cleanup via `SANDBOX_TTL_DAYS` |
+| **Built-in preview URLs** | Public HTTPS preview for port 3000 — no ngrok or tunnel setup | `sb.previews.createIfNotExists` → `showBrowser` → Browser tab iframe |
+| **Sandbox MCP** | Standard MCP interface to sandbox tooling (extend beyond custom tools) | Not wired in this template — see [Extend with Blaxel](#extend-with-blaxel) |
+
+**The dev win:** you get durable files, isolated compute, and live previews without building S3 + runners + tunneling yourself. OpenCoDesk is the reference wiring — ~4 agent tools and a file canvas on top.
 
 ## What you get
 
 - **Chat + threads** — Persistent history (libSQL / Turso) with assistant-ui
-- **Shared drive** — Blaxel Drive mounted at `/workspace` for every sandbox
-- **Session workspace** — Per-chat `uploads/`, `outputs/`, `work/` folders
-- **Canvas** — Files tab (tree + preview) and Browser tab (live preview)
+- **Blaxel-native stack** — Shared drive, per-thread sandboxes, preview URLs, SDK-first setup (`npm run setup`)
+- **Session workspace** — Per-chat `uploads/`, `outputs/`, `work/` folders on the drive
+- **Canvas** — Files tab (tree + rich preview) and Browser tab (live preview)
 - **Agent tools** — `provisionSandbox`, `exec`, `showFile`, `showBrowser`
 - **Memory wiki** — Cross-session markdown at `/workspace/memory/`
 
 **Not included by design:** auth, billing, multi-tenant isolation. Add those for production SaaS.
+
+## How Blaxel powers this template
+
+Two sandboxes share one drive:
+
+```
+User chat + uploads
+       ↓
+   Next.js app
+       ↓
+┌──────────────────┐     ┌──────────────────┐
+│ Agent sandbox    │     │ FS sandbox       │
+│ (per thread)     │     │ (file APIs)      │
+│ exec, servers    │     │ ls, read, upload │
+└────────┬─────────┘     └────────┬─────────┘
+         └──────────┬─────────────┘
+                    ↓
+         Blaxel Drive  /workspace
+              ├── sessions/<threadId>/
+              └── memory/
+```
+
+- **Agent sandbox** — LLM runs `exec`, writes files, starts dev servers. Files land on the drive immediately.
+- **FS sandbox** — Dedicated sandbox for `/api/files` and `/api/upload`. Same drive, read-only from the app's perspective.
+- **Preview** — Agent sandbox exposes port 3000 via Blaxel preview URL; `showBrowser` loads it in the canvas.
+
+Key files: `src/lib/sandbox.ts` (provision, exec, preview), `src/lib/tools.ts` (agent tools), `scripts/setup.ts` (drive + FS sandbox bootstrap).
 
 ## Prerequisites
 
@@ -33,6 +75,17 @@ npm run dev
 ```
 
 Open http://localhost:3000
+
+### Try with sample data
+
+Upload files from [`samples/`](samples/) to test agent analysis:
+
+- **`sales-q1.xlsx`** — quick smoke test (16 rows, Q1 SaaS sales)
+- **`superstore-sales.xlsx`** — retail sample (~2k orders; full CSV also in `samples/`)
+- **`retail-inventory.xlsx`** — stock levels and reorder alerts
+- **`expense-claims.xlsx`** — department expenses and approval status
+
+See [`samples/README.md`](samples/README.md) for suggested prompts and data sources.
 
 ### What `npm run setup` does
 
@@ -94,7 +147,17 @@ After setup, the Files tab should show `memory/` and `sessions/`. Starting a cha
 | Model | `src/app/api/chat/route.ts` (`openai("...")`) |
 | Starter suggestions | `src/runtime/cowork-provider.tsx` |
 
-## Architecture
+## Extend with Blaxel
+
+This template uses the Blaxel SDK directly via custom AI SDK tools. You can go further with Blaxel's platform:
+
+- **Sandbox MCP** — Connect Blaxel's sandbox MCP server for a standard tool interface alongside or instead of custom tools
+- **Different sandbox images** — Set `BL_SANDBOX_TEMPLATE` (e.g. Python, custom images)
+- **Drive as source of truth** — All session artifacts and memory live on the drive; add your own folders under `/workspace` without changing the app DB
+
+See [Blaxel docs](https://blaxel.ai) for SDK reference, drive management, and MCP setup.
+
+## App architecture
 
 ```
 src/
@@ -124,12 +187,18 @@ src/
 ## Deployment notes
 
 - Set all env vars on your host (Vercel, etc.); run `npm run setup` once from a machine with Blaxel credentials, or set `BL_DRIVE_ID` / `BL_FS_SANDBOX` manually.
+- Blaxel handles sandbox lifecycle (create, resume, preview); you handle app hosting and chat DB.
 - Use Turso (`DATABASE_URL` + `DATABASE_AUTH_TOKEN`) for production persistence.
 - Preview proxies **port 3000** on `0.0.0.0` in the agent sandbox.
 
 ## Stack
 
-Next.js 15 · Vercel AI SDK v6 · assistant-ui · Blaxel · libSQL/Drizzle · Tailwind CSS v4
+| Layer | Technology |
+|-------|------------|
+| UI / chat | Next.js 15, assistant-ui, Vercel AI SDK v6 |
+| Persistence | libSQL / Turso, Drizzle ORM |
+| **Compute & files** | **Blaxel Drive, Sandboxes, @blaxel/core** |
+| Styling | Tailwind CSS v4 |
 
 ## License
 
