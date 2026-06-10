@@ -11,7 +11,7 @@ Most AI coding demos stop at chat. OpenCoDesk shows what becomes possible when y
 | Primitive | What it unlocks | Where OpenCoDesk uses it |
 |-----------|-----------------|--------------------------|
 | **[@blaxel/core SDK](https://blaxel.ai)** | One SDK for drives, sandboxes, exec, filesystem, and previews — no custom infra glue | `scripts/setup.ts`, `src/lib/sandbox.ts`, file/upload APIs |
-| **Persistent Drive** | Durable shared filesystem across chats — not ephemeral container disk | One drive mounted at `/workspace`; agent writes and UI reads the same files |
+| **Blaxel Agent Drive** | Durable shared cloud filesystem across chats — not ephemeral container disk | One Agent Drive mounted at `/workspace`; agent writes and UI reads the same files |
 | **Sandboxes** | Isolated microVM per thread for shell work, installs, and servers | `provisionSandbox` → `SandboxInstance.createIfNotExists` per chat |
 | **Fast resume / standby** | Sandboxes resume instead of cold-starting every message | `createIfNotExists` + `SandboxInstance.get`; idle cleanup via `SANDBOX_TTL_DAYS` |
 | **Built-in preview URLs** | Public HTTPS preview for port 3000 — no ngrok or tunnel setup | `sb.previews.createIfNotExists` → `showBrowser` → Browser tab iframe |
@@ -32,7 +32,7 @@ Most AI coding demos stop at chat. OpenCoDesk shows what becomes possible when y
 
 ## How Blaxel powers this template
 
-Two sandboxes share one drive:
+Two sandboxes share one **Blaxel Agent Drive**: a **sandbox** is an isolated microVM where the agent runs shell commands and dev servers — sandboxes resume from standby in under **25ms**. A **Blaxel Agent Drive** is a cloud-native distributed filesystem with effectively unlimited capacity, shared across sandboxes so files persist beyond any single VM.
 
 ```
 User chat + uploads
@@ -46,7 +46,7 @@ User chat + uploads
 └────────┬─────────┘     └────────┬─────────┘
          └──────────┬─────────────┘
                     ↓
-         Blaxel Drive  /workspace
+         Blaxel Agent Drive  /workspace
               ├── sessions/<threadId>/
               └── memory/
 ```
@@ -61,7 +61,7 @@ Key files: `src/lib/sandbox.ts` (provision, exec, preview), `src/lib/tools.ts` (
 
 - Node.js 20+
 - [OpenAI API key](https://platform.openai.com/api-keys)
-- [Blaxel](https://app.blaxel.ai) workspace + API key
+- [Blaxel](https://app.blaxel.ai) workspace + API key — requires a free Blaxel account ([sign up](https://app.blaxel.ai) with **$100 starter credits**, no credit card required)
 
 ## Quick start
 
@@ -89,7 +89,7 @@ See [`samples/README.md`](samples/README.md) for suggested prompts and data sour
 
 ### What `npm run setup` does
 
-1. Creates (or reuses) Blaxel Drive `opencodesk-drive` and FS sandbox `opencodesk-fs`
+1. Creates (or reuses) Blaxel Agent Drive `opencodesk-drive` and FS sandbox `opencodesk-fs`
 2. Mounts the drive at `/workspace` on the FS sandbox
 3. Writes `BL_DRIVE_ID` and `BL_FS_SANDBOX` to `.env.local`
 4. Creates `/workspace/sessions` and `/workspace/memory/{projects,entities}`
@@ -155,7 +155,7 @@ This template uses the Blaxel SDK directly via custom AI SDK tools. You can go f
 - **Different sandbox images** — Set `BL_SANDBOX_TEMPLATE` (e.g. Python, custom images)
 - **Drive as source of truth** — All session artifacts and memory live on the drive; add your own folders under `/workspace` without changing the app DB
 
-See [Blaxel docs](https://blaxel.ai) for SDK reference, drive management, and MCP setup.
+See [Blaxel docs](https://docs.blaxel.ai) for the [SDK reference](https://docs.blaxel.ai/sdk-reference/introduction), [Agent Drive](https://docs.blaxel.ai/Agent-drive/Overview), and [Sandbox MCP](https://docs.blaxel.ai/Sandboxes/MCP) setup.
 
 ## App architecture
 
@@ -213,7 +213,7 @@ Cloud mode uses anonymous browser-session auth for local testing. Blaxel sandbox
 |-------|------------|
 | UI / chat | Next.js 15, assistant-ui, Vercel AI SDK v6 |
 | Persistence | libSQL / Turso, Drizzle ORM |
-| **Compute & files** | **Blaxel Drive, Sandboxes, @blaxel/core** |
+| **Compute & files** | **Blaxel Agent Drive, Sandboxes, @blaxel/core** |
 | Styling | Tailwind CSS v4 |
 
 ## License
