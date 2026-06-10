@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import {
+  AssistantCloud,
   AssistantRuntimeProvider,
   Suggestions,
   useAui,
@@ -14,6 +15,9 @@ import {
 } from "@assistant-ui/react-ai-sdk";
 import { threadListAdapter } from "@/lib/thread-adapter";
 import { createDriveAttachmentAdapter } from "@/lib/attachment-adapter";
+
+const useAssistantCloud =
+  Boolean(process.env.NEXT_PUBLIC_ASSISTANT_BASE_URL);
 
 const starterSuggestions = [
   {
@@ -43,12 +47,55 @@ const starterSuggestions = [
 ];
 
 export function CoworkProvider({ children }: { children: ReactNode }) {
+  if (useAssistantCloud) {
+    return <CloudCoworkProvider>{children}</CloudCoworkProvider>;
+  }
+  return <LocalCoworkProvider>{children}</LocalCoworkProvider>;
+}
+
+function LocalCoworkProvider({ children }: { children: ReactNode }) {
   const aui = useAui({
     suggestions: Suggestions(starterSuggestions),
   });
   const runtime = useRemoteThreadListRuntime({
-    runtimeHook: useCoworkChatRuntime,
+    runtimeHook: useLocalCoworkChatRuntime,
     adapter: threadListAdapter,
+  });
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime} aui={aui}>
+      <ThreadIdSync />
+      {children}
+    </AssistantRuntimeProvider>
+  );
+}
+
+function CloudCoworkProvider({ children }: { children: ReactNode }) {
+  const aui = useAui({
+    suggestions: Suggestions(starterSuggestions),
+  });
+  const cloud = useMemo(
+    () =>
+      new AssistantCloud({
+        baseUrl: process.env.NEXT_PUBLIC_ASSISTANT_BASE_URL!,
+        anonymous: true,
+        telemetry: {
+          beforeReport: (report) => ({
+            ...report,
+            metadata: { app: "opencodesk" },
+          }),
+        },
+      }),
+    [],
+  );
+  const runtime = useChatRuntime({
+    cloud,
+    transport: new AssistantChatTransport({
+      api: "/api/chat",
+    }),
+    adapters: {
+      attachments: createDriveAttachmentAdapter(getCurrentThreadId),
+    },
   });
 
   return (
@@ -76,7 +123,7 @@ function ThreadIdSync() {
   return null;
 }
 
-function useCoworkChatRuntime() {
+function useLocalCoworkChatRuntime() {
   return useChatRuntime({
     transport: new AssistantChatTransport({
       api: "/api/chat",

@@ -21,7 +21,7 @@ Most AI coding demos stop at chat. OpenCoDesk shows what becomes possible when y
 
 ## What you get
 
-- **Chat + threads** — Persistent history (libSQL / Turso) with assistant-ui
+- **Chat + threads** — Persistent history (libSQL / Turso, or [assistant-ui Cloud](https://cloud.assistant-ui.com) when configured)
 - **Blaxel-native stack** — Shared drive, per-thread sandboxes, preview URLs, SDK-first setup (`npm run setup`)
 - **Session workspace** — Per-chat `uploads/`, `outputs/`, `work/` folders on the drive
 - **Canvas** — Files tab (tree + rich preview) and Browser tab (live preview)
@@ -183,6 +183,22 @@ src/
 | `BL_SANDBOX_TEMPLATE` | No | Sandbox image (default `blaxel/node:latest`) |
 | `DATABASE_URL` | No | Turso URL (default: local `./data/local.db`) |
 | `SANDBOX_TTL_DAYS` | No | Idle sandbox cleanup (default `2`) |
+| `NEXT_PUBLIC_ASSISTANT_BASE_URL` | No | assistant-ui Cloud Frontend API URL — enables cloud thread persistence + run telemetry |
+| `ASSISTANT_API_KEY` | No | assistant-ui Cloud API key (server-side auth; optional for anonymous demo) |
+
+### assistant-ui Cloud (optional)
+
+To persist threads and inspect run traces in the [assistant-ui Cloud dashboard](https://cloud.assistant-ui.com) instead of local libSQL:
+
+1. Create a project at [cloud.assistant-ui.com](https://cloud.assistant-ui.com)
+2. Add to `.env.local`:
+   ```env
+   NEXT_PUBLIC_ASSISTANT_BASE_URL=https://proj-[YOUR-ID].assistant-api.com
+   ASSISTANT_API_KEY=sk_aui_proj_...
+   ```
+3. Restart `npm run dev` — the app auto-switches to cloud persistence when `NEXT_PUBLIC_ASSISTANT_BASE_URL` is set.
+
+Cloud mode uses anonymous browser-session auth for local testing. Blaxel sandbox session folders still key off the cloud thread ID. Remove the env var to revert to local libSQL threads.
 
 ## Deployment notes
 

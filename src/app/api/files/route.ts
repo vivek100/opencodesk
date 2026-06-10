@@ -5,7 +5,7 @@
  * so files written by the agent appear here.
  */
 
-import { errorMessage, withRetry } from "@/lib/sandbox";
+import { errorMessage } from "@/lib/sandbox";
 
 const FS_SANDBOX = process.env.BL_FS_SANDBOX;
 
@@ -22,19 +22,8 @@ export async function GET(req: Request) {
 
   try {
     const { SandboxInstance } = await import("@blaxel/core");
-    const retryContext = {
-      sandboxName: FS_SANDBOX,
-      driveName: process.env.BL_DRIVE_ID,
-      region: process.env.BL_REGION,
-    };
-    const sb = await withRetry<any>(
-      () => SandboxInstance.get(FS_SANDBOX),
-      { ...retryContext, operation: "fsSandbox.get" },
-    );
-    const dir = await withRetry<any>(
-      () => sb.fs.ls(path),
-      { ...retryContext, operation: "fs.ls" },
-    );
+    const sb = await SandboxInstance.get(FS_SANDBOX);
+    const dir = await sb.fs.ls(path);
 
     const fileEntries = (dir.files ?? []).map((f: any) => ({
       name: f.name as string,
