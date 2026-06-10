@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { StreamdownMarkdownContent } from "@/components/markdown/streamdown-markdown-content";
 
 type FileViewerProps = {
   path: string;
@@ -152,41 +153,7 @@ function MarkdownViewer({ content }: { content: string | null }) {
     );
   }
 
-  return <LazyMarkdown content={content} />;
-}
-
-function LazyMarkdown({ content }: { content: string }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [Md, setMd] = useState<{ default: any } | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [gfm, setGfm] = useState<{ default: any } | null>(null);
-
-  useEffect(() => {
-    Promise.all([import("react-markdown"), import("remark-gfm")]).then(
-      ([mdMod, gfmMod]) => {
-        setMd(mdMod);
-        setGfm(gfmMod);
-      },
-    );
-  }, []);
-
-  if (!Md || !gfm) {
-    return (
-      <pre className="whitespace-pre-wrap p-3 font-mono text-xs leading-relaxed">
-        {content}
-      </pre>
-    );
-  }
-
-  const ReactMarkdown = Md.default;
-
-  return (
-    <div className="prose prose-sm prose-invert max-w-none p-4">
-      <ReactMarkdown remarkPlugins={[gfm.default]}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
+  return <StreamdownMarkdownContent content={content} />;
 }
 
 function CsvViewer({ content }: { content: string | null }) {

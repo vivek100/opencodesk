@@ -10,7 +10,7 @@
  * Limit: 25 MB per file.
  */
 
-import { errorMessage, withRetry } from "@/lib/sandbox";
+import { errorMessage } from "@/lib/sandbox";
 
 const FS_SANDBOX = process.env.BL_FS_SANDBOX;
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
@@ -55,25 +55,14 @@ export async function POST(req: Request) {
 
   try {
     const { SandboxInstance } = await import("@blaxel/core");
-    const retryContext = {
-      sandboxName: FS_SANDBOX,
-      driveName: process.env.BL_DRIVE_ID,
-      region: process.env.BL_REGION,
-    };
-    const sb = await withRetry<any>(
-      () => SandboxInstance.get(FS_SANDBOX),
-      { ...retryContext, operation: "fsSandbox.get" },
-    );
+    const sb = await SandboxInstance.get(FS_SANDBOX);
 
     const uploaded: { name: string; path: string; size: number }[] = [];
 
     for (const file of files) {
       const filePath = `${destDir.replace(/\/+$/, "")}/${file.name}`;
       const buffer = Buffer.from(await file.arrayBuffer());
-      await withRetry(
-        () => sb.fs.writeBinary(filePath, buffer),
-        { ...retryContext, operation: "fs.writeBinary" },
-      );
+      await sb.fs.writeBinary(filePath, buffer);
       uploaded.push({ name: file.name, path: filePath, size: file.size });
     }
 

@@ -13,6 +13,10 @@
  * Optional:
  *   BL_SANDBOX_TEMPLATE=<image-name>   (defaults to blaxel/node:latest)
  *   BL_REGION=<region>                 (defaults to us-was-1 for Agent Drive)
+ *
+ * @blaxel/core 0.2.87+ auto-retries transient failures for fs read/list/write
+ * and drives.list. App-level retries here are kept only for process.exec
+ * (retrying exec could double-run commands) and provisioning APIs.
  */
 
 import blaxelCorePackage from "@blaxel/core/package.json";
@@ -80,7 +84,7 @@ function logRetryExhausted(context: RetryContext | undefined, err: unknown) {
   });
 }
 
-export async function withRetry<T>(
+async function retryTransient<T>(
   fn: () => Promise<T>,
   context?: RetryContext,
 ): Promise<T> {
@@ -110,6 +114,12 @@ export async function withRetry<T>(
   throw lastError;
 }
 
+/** Retries shell exec only — Blaxel does not auto-retry process.exec. */
+const withExecRetry = retryTransient;
+
+/** Retries sandbox/drive provisioning APIs not covered by SDK self-heal. */
+const withProvisioningRetry = retryTransient;
+
 async function waitUntilReachable(sb: any, maxWaitMs = 120_000): Promise<void> {
   const deadline = Date.now() + maxWaitMs;
   let lastError: unknown;
@@ -136,10 +146,7 @@ async function ensureDriveMounted(
   driveName: string,
   context: RetryContext,
 ) {
-  const mounts = await withRetry<any[]>(
-    () => sb.drives.list(),
-    { ...context, operation: "drives.list" },
-  );
+  const mounts = await sb.drives.list();
   const alreadyMounted = mounts.some(
     (mount: any) =>
       mount?.driveName === driveName && mount?.mountPath === WORKSPACE_MOUNT_PATH,
@@ -147,23 +154,21 @@ async function ensureDriveMounted(
 
   if (alreadyMounted) return mounts;
 
-  await withRetry(() =>
-    sb.drives.mount({
-      driveName,
-      mountPath: WORKSPACE_MOUNT_PATH,
-      drivePath: "/",
-    }),
+  await withProvisioningRetry(
+    () =>
+      sb.drives.mount({
+        driveName,
+        mountPath: WORKSPACE_MOUNT_PATH,
+        drivePath: "/",
+      }),
     { ...context, operation: "drives.mount" },
   );
-  return withRetry<any[]>(
-    () => sb.drives.list(),
-    { ...context, operation: "drives.list.afterMount" },
-  );
+  return sb.drives.list();
 }
 
 async function resolveDrive(DriveInstance: any, driveName: string, regionHint: string) {
   try {
-    return await withRetry<any>(
+    return await withProvisioningRetry<any>(
       () => DriveInstance.get(driveName),
       { operation: "drive.get", driveName, region: regionHint },
     );
@@ -175,7 +180,7 @@ async function resolveDrive(DriveInstance: any, driveName: string, regionHint: s
     }
   }
 
-  return withRetry<any>(
+  return withProvisioningRetry<any>(
     () =>
       DriveInstance.createIfNotExists({
         name: driveName,
@@ -261,7 +266,7 @@ export async function provisionSandbox(
     const drive = await resolveDrive(DriveInstance, driveName, regionHint);
     region = drive.region ?? drive.spec?.region ?? regionHint;
 
-    const sb = await withRetry<any>(() =>
+    const sb = await withProvisioningRetry<any>(() =>
       SandboxInstance.createIfNotExists({
         name: sandboxName,
         image: process.env.BL_SANDBOX_TEMPLATE ?? "blaxel/node:latest",
@@ -275,7 +280,7 @@ export async function provisionSandbox(
     await ensureDriveMounted(sb, driveName, { sandboxName, driveName, region });
 
     await waitUntilReachable(sb);
-    await withRetry(() =>
+    await withExecRetry(() =>
       sb.process.exec({
         command: `mkdir -p ${WORKSPACE_MOUNT_PATH}`,
         waitForCompletion: true,
@@ -284,7 +289,7 @@ export async function provisionSandbox(
       { operation: "sandbox.mkdirWorkspace", sandboxName, driveName, region },
     );
 
-    const preview = await withRetry<any>(() =>
+    const preview = await withProvisioningRetry<any>(() =>
       sb.previews.createIfNotExists({
         metadata: { name: "preview" },
         spec: { port: 3000, public: true },
@@ -294,7 +299,7 @@ export async function provisionSandbox(
     const previewUrl = preview.spec?.url as string;
 
     const exec: SandboxExec = async (command: string, cwd = "/workspace") => {
-      const result: any = await withRetry(() =>
+      const result: any = await withExecRetry(() =>
         sb.process.exec({ command, waitForCompletion: true, workingDir: cwd }),
         { operation: "sandbox.exec", sandboxName, driveName, region },
       );
@@ -315,7 +320,7 @@ export async function provisionSandbox(
 export async function fetchPreviewUrl(sessionId: string): Promise<string> {
   const { SandboxInstance } = await import("@blaxel/core");
   const sb = await SandboxInstance.get(toSandboxName(sessionId));
-  const preview = await withRetry<any>(() =>
+  const preview = await withProvisioningRetry<any>(() =>
     sb.previews.createIfNotExists({
       metadata: { name: "preview" },
       spec: { port: 3000, public: true },
