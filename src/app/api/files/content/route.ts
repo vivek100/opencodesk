@@ -7,6 +7,13 @@
  * with an appropriate Content-Type based on file extension.
  */
 
+import {
+  errorMessage,
+  fsSandboxRetryContext,
+  getFsSandbox,
+  withBlaxelRetry,
+} from "@/lib/sandbox";
+
 const FS_SANDBOX = process.env.BL_FS_SANDBOX;
 
 const MIME_TYPES: Record<string, string> = {
@@ -55,11 +62,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    const { SandboxInstance } = await import("@blaxel/core");
-    const sb = await SandboxInstance.get(FS_SANDBOX);
-
     if (mode === "binary") {
-      const blob = await sb.fs.readBinary(path);
+      const blob = await withBlaxelRetry(async () => {
+        const sb = await getFsSandbox();
+        return sb.fs.readBinary(path);
+      }, fsSandboxRetryContext("fs.readBinary"));
       const arrayBuffer = await blob.arrayBuffer();
       const mimeType = getMimeType(path);
       return new Response(arrayBuffer, {
@@ -70,12 +77,15 @@ export async function GET(req: Request) {
       });
     }
 
-    const content = await sb.fs.read(path);
+    const content = await withBlaxelRetry(async () => {
+      const sb = await getFsSandbox();
+      return sb.fs.read(path);
+    }, fsSandboxRetryContext("fs.read"));
     return new Response(content, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     return Response.json({ error: message }, { status: 500 });
   }
 }

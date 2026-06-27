@@ -14,14 +14,18 @@
  *   BL_SANDBOX_TEMPLATE=<image-name>   (defaults to blaxel/node:latest)
  *   BL_REGION=<region>                 (defaults to us-was-1 for Agent Drive)
  *
- * @blaxel/core 0.2.87+ auto-retries transient failures for fs read/list/write
- * and drives.list. App-level retries here are kept only for process.exec
- * (retrying exec could double-run commands) and provisioning APIs.
+ * @blaxel/core 0.2.87+ auto-retries fs read/list/write and drives.list internally.
+ * App-level withBlaxelRetry is kept for SandboxInstance.get and as a fallback
+ * during standby wake-up (Blaxel standby reset fix still in progress).
+ * process.exec uses withExecRetry only — retrying exec could double-run commands.
  */
 
 import blaxelCorePackage from "@blaxel/core/package.json";
 
 const MAX_RETRIES = 3;
+const BLAXEL_RETRY_BUDGET_MS = 60_000;
+const BLAXEL_RETRY_MIN_MS = 500;
+const BLAXEL_RETRY_MAX_MS = 30_000;
 const DEFAULT_REGION = "us-was-1";
 const WORKSPACE_MOUNT_PATH = "/workspace";
 
@@ -112,6 +116,90 @@ async function retryTransient<T>(
   }
   logRetryExhausted(context, lastError);
   throw lastError;
+}
+
+function isRetryableBlaxelError(err: unknown): boolean {
+  const msg = errorMessage(err);
+  if (
+    msg.includes("fetch failed") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("EAI_AGAIN") ||
+    msg.includes("socket hang up") ||
+    msg.toLowerCase().includes("timeout")
+  ) {
+    return true;
+  }
+  return (
+    msg.includes("WORKLOAD_UNAVAILABLE") ||
+    msg.includes('"retryable":true') ||
+    msg.includes("not available") ||
+    msg.includes("not yet ready")
+  );
+}
+
+/** Retries file-route Blaxel calls with backoff for standby wake-up (~60s budget). */
+export async function withBlaxelRetry<T>(
+  fn: () => Promise<T>,
+  context?: RetryContext,
+): Promise<T> {
+  const deadline = Date.now() + BLAXEL_RETRY_BUDGET_MS;
+  let delay = BLAXEL_RETRY_MIN_MS;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableBlaxelError(err)) throw err;
+      if (Date.now() + delay >= deadline) break;
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, BLAXEL_RETRY_MAX_MS);
+    }
+  }
+
+  logRetryExhausted(context, lastError);
+  throw lastError;
+}
+
+export function fsSandboxRetryContext(operation: string): RetryContext {
+  return {
+    sandboxName: process.env.BL_FS_SANDBOX,
+    driveName: process.env.BL_DRIVE_ID,
+    region: process.env.BL_REGION,
+    operation,
+  };
+}
+
+/** Resume (or create) the dedicated FS sandbox and ensure the Agent Drive is mounted. */
+export async function getFsSandbox() {
+  const fsSandboxName = process.env.BL_FS_SANDBOX;
+  const driveName = process.env.BL_DRIVE_ID;
+  if (!fsSandboxName) {
+    throw new Error("BL_FS_SANDBOX env var not configured");
+  }
+  if (!driveName) {
+    throw new Error("BL_DRIVE_ID env var not configured");
+  }
+
+  const { SandboxInstance } = await import("@blaxel/core");
+  const region = process.env.BL_REGION ?? DEFAULT_REGION;
+
+  const sb = await SandboxInstance.createIfNotExists({
+    name: fsSandboxName,
+    image: process.env.BL_SANDBOX_TEMPLATE ?? "blaxel/node:latest",
+    region,
+    memory: 512,
+  });
+
+  await ensureDriveMounted(sb, driveName, {
+    sandboxName: fsSandboxName,
+    driveName,
+    region,
+  });
+
+  return sb;
 }
 
 /** Retries shell exec only — Blaxel does not auto-retry process.exec. */

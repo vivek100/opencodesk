@@ -5,7 +5,12 @@
  * so files written by the agent appear here.
  */
 
-import { errorMessage } from "@/lib/sandbox";
+import {
+  errorMessage,
+  fsSandboxRetryContext,
+  getFsSandbox,
+  withBlaxelRetry,
+} from "@/lib/sandbox";
 
 const FS_SANDBOX = process.env.BL_FS_SANDBOX;
 
@@ -21,9 +26,10 @@ export async function GET(req: Request) {
   const path = url.searchParams.get("path") ?? "/workspace";
 
   try {
-    const { SandboxInstance } = await import("@blaxel/core");
-    const sb = await SandboxInstance.get(FS_SANDBOX);
-    const dir = await sb.fs.ls(path);
+    const dir = await withBlaxelRetry(async () => {
+      const sb = await getFsSandbox();
+      return sb.fs.ls(path);
+    }, fsSandboxRetryContext("fs.ls"));
 
     const fileEntries = (dir.files ?? []).map((f: any) => ({
       name: f.name as string,
